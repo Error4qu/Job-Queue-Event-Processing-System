@@ -9,9 +9,12 @@ import org.springframework.stereotype.Service;
 public class JobService {
     @Autowired
     private JobRepository repo;
-
+    @Autowired
+    private KafkaProducerService producer;
     public Job createJob(Job job) {
         job.setStatus("PENDING");
-        return repo.save(job);
+        Job saved = repo.save(job);
+        producer.sendJob(saved.getId().toString());
+        return saved;
     }
 }
