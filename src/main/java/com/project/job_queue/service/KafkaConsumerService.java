@@ -2,8 +2,8 @@ package com.project.job_queue.service;
 
 import com.project.job_queue.model.Job;
 import com.project.job_queue.repository.JobRepository;
-import com.project.job_queue.executor.ExecutorFactory;
-import com.project.job_queue.executor.JobExecutor;
+import com.project.job_queue.executer.ExecutorFactory;
+import com.project.job_queue.executer.JobExecutor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.support.Acknowledgment;
@@ -17,6 +17,8 @@ public class KafkaConsumerService {
     private ExecutorFactory executorFactory;
     @Autowired
     private RedisService redisService;
+    @Autowired
+    private RateLimiterService rateLimiter;
     private int failureCount = 0;
     private boolean circuitOpen = false;
     private long lastFailureTime = 0;
@@ -53,6 +55,17 @@ public class KafkaConsumerService {
             return;
         }
         long now = System.currentTimeMillis();
+        if (!rateLimiter.allow(job.getType(), 5)) {
+
+            System.out.println("Rate limit hit → retry later");
+
+            job.setStatus("RETRY");
+            job.setNextRetryTime(System.currentTimeMillis() + 2000);
+            repo.save(job);
+
+            ack.acknowledge();
+            return;
+        }
         if (circuitOpen) {
             if (now - lastFailureTime < CIRCUIT_TIMEOUT) {
                 System.out.println("Circuit OPEN → delaying job: " + jobId);

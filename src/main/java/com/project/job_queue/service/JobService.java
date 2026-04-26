@@ -13,7 +13,9 @@ public class JobService {
 
     @Autowired
     private JobRepository repo;
-
+    @Autowired
+    private KafkaProducerService producer;
+    private static final long IMMEDIATE_THRESHOLD = 60 * 1000;
     public Job createJob(JobRequest request) {
 
         Job job = new Job();
@@ -54,6 +56,13 @@ public class JobService {
         System.out.println("SCHEDULE TIME: " + scheduleTime);
         System.out.println("CURRENT TIME: " + System.currentTimeMillis());
         job.setScheduleTime(scheduleTime);
-        return repo.save(job);
+        Job saved = repo.save(job);
+        long now = System.currentTimeMillis();
+        if (scheduleTime - now <= IMMEDIATE_THRESHOLD) {
+            System.out.println("⚡ Immediate job → sending to Kafka: " + saved.getId());
+            producer.sendJob(saved.getId().toString());
+            job.setStatus("QUEUED");
+        }
+        return saved;
     }
 }

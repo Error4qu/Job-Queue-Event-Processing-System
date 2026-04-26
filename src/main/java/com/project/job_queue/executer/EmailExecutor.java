@@ -1,4 +1,4 @@
-package com.project.job_queue.executor;
+package com.project.job_queue.executer;
 
 import com.project.job_queue.model.Job;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -9,7 +9,7 @@ import org.springframework.stereotype.Component;
 import java.util.Properties;
 
 @Component
-public class EmailExecutor implements JobExecutor {
+public class EmailExecutor implements com.project.job_queue.executor.JobExecutor {
 
     @Autowired
     private JavaMailSender mailSender;

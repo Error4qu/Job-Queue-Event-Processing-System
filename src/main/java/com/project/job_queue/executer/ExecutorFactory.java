@@ -1,23 +1,28 @@
-package com.project.job_queue.executor;
+package com.project.job_queue.executer;
 
+import com.project.job_queue.executer.ApiExecutor;
+import com.project.job_queue.executer.EmailExecutor;
+import com.project.job_queue.executer.LogExecutor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
-
 @Component
 public class ExecutorFactory {
 
     @Autowired
-    private com.project.job_queue.executor.EmailExecutor emailExecutor;
+    private EmailExecutor emailExecutor;
 
-    public com.project.job_queue.executor.JobExecutor getExecutor(String type) {
+    @Autowired
+    private ApiExecutor apiExecutor;
 
-        if (type == null) {
-            throw new RuntimeException("Job type is null");
-        }
+    @Autowired
+    private LogExecutor logExecutor;
 
+    public com.project.job_queue.executer.JobExecutor getExecutor(String type) {
         return switch (type) {
             case "EMAIL" -> emailExecutor;
-            default -> throw new RuntimeException("Unknown job type: " + type);
+            case "API" -> apiExecutor;
+            case "LOG" -> logExecutor;
+            default -> throw new RuntimeException("Invalid job type");
         };
     }
 }
