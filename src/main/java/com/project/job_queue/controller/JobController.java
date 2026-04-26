@@ -1,5 +1,6 @@
 package com.project.job_queue.controller;
 
+import com.project.job_queue.dto.JobRequest;
 import com.project.job_queue.model.Job;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -16,7 +17,7 @@ public class JobController {
     private JobService service;
 
     @PostMapping
-    public Job createJob(@RequestBody Job job) {
+    public Job createJob(@RequestBody JobRequest job) {
         return service.createJob(job);
     }
 }
