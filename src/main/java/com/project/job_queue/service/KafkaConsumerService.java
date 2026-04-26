@@ -15,6 +15,8 @@ public class KafkaConsumerService {
     private JobRepository repo;
     @Autowired
     private ExecutorFactory executorFactory;
+    @Autowired
+    private RedisService redisService;
     private int failureCount = 0;
     private boolean circuitOpen = false;
     private long lastFailureTime = 0;
@@ -36,6 +38,15 @@ public class KafkaConsumerService {
             return;
         }
         Job job = repo.findById(jobId).orElse(null);
+        if (redisService.isCancelled(jobId)) {
+            System.out.println("Job cancelled: " + jobId);
+
+            job.setStatus("CANCELLED");
+            repo.save(job);
+
+            ack.acknowledge();
+            return;
+        }
         if (job == null) {
             System.out.println("Job not found, skipping: " + jobId);
             ack.acknowledge();
