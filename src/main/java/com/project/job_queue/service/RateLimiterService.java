@@ -1,38 +1,48 @@
 package com.project.job_queue.service;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 import java.util.Collections;
+/** Redis-backed sliding window rate limiter using a Lua script for atomic operations. */
 @Service
 public class RateLimiterService {
+    private static final Logger log = LoggerFactory.getLogger(RateLimiterService.class);
     @Autowired
     private StringRedisTemplate redis;
-    private final String lua = """
+    String lua = """
     local key = KEYS[1]
-    local limit = tonumber(ARGV[1])
-    local ttl = tonumber(ARGV[2])
-
-    local current = redis.call("GET", key)
-
-    if current and tonumber(current) >= limit then
+    local now = tonumber(ARGV[1])
+    local window = tonumber(ARGV[2])
+    local limit = tonumber(ARGV[3])
+    redis.call('ZREMRANGEBYSCORE', key, 0, now - window)
+    local count = redis.call('ZCARD', key)
+    if count >= limit then
         return 0
-    else
-        current = redis.call("INCR", key)
-        if current == 1 then
-            redis.call("PEXPIRE", key, ttl)
-        end
-        return 1
     end
+    redis.call('ZADD', key, now, now)
+    redis.call('PEXPIRE', key, window)
+    return 1
     """;
+    private final DefaultRedisScript<Long> script =
+            new DefaultRedisScript<>(lua, Long.class);
+    /** Checks if a request for the given type is allowed under the rate limit. */
     public boolean allow(String type, int limitPerSec) {
         String key = "rate:" + type;
+        long now = System.currentTimeMillis();
         Long result = redis.execute(
-                new DefaultRedisScript<>(lua, Long.class),
+                script,
                 Collections.singletonList(key),
-                String.valueOf(limitPerSec),
-                "1000"
+                String.valueOf(now),
+                "1000",
+                String.valueOf(limitPerSec)
         );
-        return result != null && result == 1;
+        boolean allowed = result != null && result == 1;
+        if (!allowed) {
+            log.warn("Rate limit exceeded for type={}", type);
+        }
+        return allowed;
     }
 }

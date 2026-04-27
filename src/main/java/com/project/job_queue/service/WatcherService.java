@@ -1,45 +1,65 @@
 package com.project.job_queue.service;
-
 import com.project.job_queue.model.Job;
+import com.project.job_queue.model.JobStatus;
 import com.project.job_queue.repository.JobRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
-
+import org.springframework.data.redis.core.StringRedisTemplate;
 import java.util.List;
-
+/** Scheduled watcher that picks up PENDING jobs and pushes them into the Redis delay queue. */
 @Service
 public class WatcherService {
-
+    private static final Logger log = LoggerFactory.getLogger(WatcherService.class);
     @Autowired
     private JobRepository repo;
-
     @Autowired
-    private KafkaProducerService producer;
-
-    @Scheduled(fixedDelay = 5000)
-    public void pollJobs() {
-
+    private RedisDelayQueueService redisQueue;
+    @Autowired
+    private StringRedisTemplate redis;
+    /** Runs every 20 seconds to schedule pending jobs and detect watcher gaps. */
+    @Scheduled(fixedDelay = 20000)
+    public void watch() {
         long now = System.currentTimeMillis();
-
-        System.out.println("=== WATCHER RUNNING ===");
-        System.out.println("NOW: " + now);
-
-        List<Job> jobs = repo.findByStatusAndScheduleTimeLessThanEqual("PENDING", now);
-
-        System.out.println("Jobs found: " + jobs.size());
-
+        String last = redis.opsForValue().get("watcher:lastRun");
+        redis.opsForValue().set("watcher:lastRun", String.valueOf(now));
+        if (last != null && now - Long.parseLong(last) > 25000) {
+            log.warn("Watcher gap detected, triggering recovery");
+            recoverMissedJobs(now);
+        }
+        List<Job> jobs = repo.findWindow(
+                now,
+                now + 20000,
+                PageRequest.of(0, 200)
+        );
         for (Job job : jobs) {
-
-            System.out.println("Job ID: " + job.getId());
-            System.out.println("ScheduleTime: " + job.getScheduleTime());
-
-            producer.sendJob(job.getId().toString());
-
-            job.setStatus("QUEUED");
+            if (JobStatus.PENDING != job.getStatus()) continue;
+            job.setStatus(JobStatus.SCHEDULED);
             repo.save(job);
-
-            System.out.println("Job sent to Kafka ✅");
+            redisQueue.scheduleJob(job.getId(), job.getScheduleTime());
+            log.info("Job scheduled jobId={} scheduleTime={}", job.getId(), job.getScheduleTime());
+        }
+    }
+    /** Recovers jobs that may have been missed during a watcher outage. */
+    private void recoverMissedJobs(long now) {
+        long start = now - 60000;
+        List<Job> jobs = repo.findPendingOrScheduledInRange(
+                start,
+                now,
+                PageRequest.of(0, 500)
+        );
+        for (Job job : jobs) {
+            if (JobStatus.PENDING != job.getStatus() &&
+                    JobStatus.SCHEDULED != job.getStatus()) continue;
+            redisQueue.scheduleJob(job.getId(), job.getScheduleTime());
+            if (JobStatus.PENDING == job.getStatus()) {
+                job.setStatus(JobStatus.SCHEDULED);
+                repo.save(job);
+            }
+            log.info("Recovered missed jobId={}", job.getId());
         }
     }
 }
