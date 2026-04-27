@@ -1,7 +1,6 @@
 package com.project.job_queue.service;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
@@ -10,8 +9,7 @@ import java.util.Collections;
 @Service
 public class RateLimiterService {
     private static final Logger log = LoggerFactory.getLogger(RateLimiterService.class);
-    @Autowired
-    private StringRedisTemplate redis;
+    private final StringRedisTemplate redis;
     String lua = """
     local key = KEYS[1]
     local now = tonumber(ARGV[1])
@@ -28,6 +26,10 @@ public class RateLimiterService {
     """;
     private final DefaultRedisScript<Long> script =
             new DefaultRedisScript<>(lua, Long.class);
+    /** Constructs the rate limiter with the Redis template dependency. */
+    public RateLimiterService(StringRedisTemplate redis) {
+        this.redis = redis;
+    }
     /** Checks if a request for the given type is allowed under the rate limit. */
     public boolean allow(String type, int limitPerSec) {
         String key = "rate:" + type;

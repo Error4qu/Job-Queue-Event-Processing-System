@@ -4,7 +4,6 @@ import com.project.job_queue.model.JobStatus;
 import com.project.job_queue.repository.JobRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -14,12 +13,16 @@ import java.util.List;
 @Service
 public class WatcherService {
     private static final Logger log = LoggerFactory.getLogger(WatcherService.class);
-    @Autowired
-    private JobRepository repo;
-    @Autowired
-    private RedisDelayQueueService redisQueue;
-    @Autowired
-    private StringRedisTemplate redis;
+    private final JobRepository repo;
+    private final RedisDelayQueueService redisQueue;
+    private final StringRedisTemplate redis;
+    /** Constructs the watcher with required dependencies. */
+    public WatcherService(JobRepository repo, RedisDelayQueueService redisQueue,
+                          StringRedisTemplate redis) {
+        this.repo = repo;
+        this.redisQueue = redisQueue;
+        this.redis = redis;
+    }
     /** Runs every 20 seconds to schedule pending jobs and detect watcher gaps. */
     @Scheduled(fixedDelay = 20000)
     public void watch() {

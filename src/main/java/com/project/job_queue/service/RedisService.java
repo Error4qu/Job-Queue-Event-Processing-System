@@ -1,7 +1,6 @@
 package com.project.job_queue.service;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import java.time.Duration;
@@ -10,8 +9,11 @@ import java.time.Duration;
 public class RedisService {
     private static final Logger log = LoggerFactory.getLogger(RedisService.class);
     private static final Duration CANCEL_TTL = Duration.ofMinutes(10);
-    @Autowired
-    private StringRedisTemplate redis;
+    private final StringRedisTemplate redis;
+    /** Constructs the service with the Redis template dependency. */
+    public RedisService(StringRedisTemplate redis) {
+        this.redis = redis;
+    }
     /** Sets the cancellation flag for a job in Redis with a 10 minute TTL. */
     public void cancelJob(Long jobId) {
         log.info("Marking job as cancelled in Redis jobId={}", jobId);

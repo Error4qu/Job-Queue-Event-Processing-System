@@ -6,7 +6,6 @@ import com.project.job_queue.executer.ExecutorFactory;
 import com.project.job_queue.executer.JobExecutor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.stereotype.Service;
@@ -16,20 +15,24 @@ import java.util.concurrent.atomic.AtomicLong;
 @Service
 public class KafkaConsumerService {
     private static final Logger log = LoggerFactory.getLogger(KafkaConsumerService.class);
-    @Autowired
-    private JobRepository repo;
-    @Autowired
-    private ExecutorFactory executorFactory;
-    @Autowired
-    private RedisService redisService;
-    @Autowired
-    private RateLimiterService rateLimiter;
-    private final AtomicInteger failureCount = new AtomicInteger(0);
-    private volatile boolean circuitOpen = false;
-    private final AtomicLong lastFailureTime = new AtomicLong(0);
     private static final int FAILURE_THRESHOLD = 5;
     private static final long CIRCUIT_TIMEOUT = 30000;
     private static final int MAX_RETRY = 5;
+    private final JobRepository repo;
+    private final ExecutorFactory executorFactory;
+    private final RedisService redisService;
+    private final RateLimiterService rateLimiter;
+    private final AtomicInteger failureCount = new AtomicInteger(0);
+    private volatile boolean circuitOpen = false;
+    private final AtomicLong lastFailureTime = new AtomicLong(0);
+    /** Constructs the consumer with all required dependencies. */
+    public KafkaConsumerService(JobRepository repo, ExecutorFactory executorFactory,
+                                RedisService redisService, RateLimiterService rateLimiter) {
+        this.repo = repo;
+        this.executorFactory = executorFactory;
+        this.redisService = redisService;
+        this.rateLimiter = rateLimiter;
+    }
     /** Consumes job messages from Kafka, executes them and handles failure scenarios. */
     @KafkaListener(
             topics = "job-topic",

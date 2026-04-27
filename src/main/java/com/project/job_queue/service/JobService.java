@@ -5,7 +5,6 @@ import com.project.job_queue.model.JobStatus;
 import com.project.job_queue.repository.JobRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import java.time.*;
 import java.util.UUID;
@@ -13,11 +12,14 @@ import java.util.UUID;
 @Service
 public class JobService {
     private static final Logger log = LoggerFactory.getLogger(JobService.class);
-    @Autowired
-    private JobRepository repo;
-    @Autowired
-    private KafkaProducerService producer;
     private static final long IMMEDIATE_THRESHOLD = 60 * 1000;
+    private final JobRepository repo;
+    private final KafkaProducerService producer;
+    /** Constructs the service with required repository and producer dependencies. */
+    public JobService(JobRepository repo, KafkaProducerService producer) {
+        this.repo = repo;
+        this.producer = producer;
+    }
     /** Creates a new job, persists it, and dispatches immediately if within threshold. */
     public Job createJob(JobRequest request) {
         Job job = new Job();

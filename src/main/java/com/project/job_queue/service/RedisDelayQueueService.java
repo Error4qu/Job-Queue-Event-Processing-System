@@ -1,7 +1,6 @@
 package com.project.job_queue.service;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import java.util.Set;
@@ -10,8 +9,11 @@ import java.util.Set;
 public class RedisDelayQueueService {
     private static final Logger log = LoggerFactory.getLogger(RedisDelayQueueService.class);
     private static final String KEY = "scheduled_jobs";
-    @Autowired
-    private StringRedisTemplate redis;
+    private final StringRedisTemplate redis;
+    /** Constructs the delay queue service with the Redis template dependency. */
+    public RedisDelayQueueService(StringRedisTemplate redis) {
+        this.redis = redis;
+    }
     /** Adds a job to the delay queue with its scheduled execution time as score. */
     public void scheduleJob(Long jobId, long scheduleTime) {
         log.info("Scheduling job in Redis delay queue jobId={} scheduleTime={}", jobId, scheduleTime);

@@ -4,7 +4,6 @@ import com.project.job_queue.model.JobStatus;
 import com.project.job_queue.repository.JobRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import java.util.Set;
@@ -12,12 +11,16 @@ import java.util.Set;
 @Service
 public class RedisDispatcherService {
     private static final Logger log = LoggerFactory.getLogger(RedisDispatcherService.class);
-    @Autowired
-    private RedisDelayQueueService redisQueue;
-    @Autowired
-    private JobRepository repo;
-    @Autowired
-    private KafkaProducerService producer;
+    private final RedisDelayQueueService redisQueue;
+    private final JobRepository repo;
+    private final KafkaProducerService producer;
+    /** Constructs the dispatcher with required dependencies. */
+    public RedisDispatcherService(RedisDelayQueueService redisQueue, JobRepository repo,
+                                  KafkaProducerService producer) {
+        this.redisQueue = redisQueue;
+        this.repo = repo;
+        this.producer = producer;
+    }
     /** Polls Redis every second for jobs that are ready to dispatch. */
     @Scheduled(fixedDelay = 1000)
     public void dispatch() {
