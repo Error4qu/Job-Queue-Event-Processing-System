@@ -6,6 +6,12 @@ A production-grade distributed job scheduling and execution system built with **
 
 ## Architecture Overview
 
+### Low-Level Design
+
+![Low-Level Design: Distributed Job Scheduler System](docs/lld-architecture.png)
+
+### System Flow
+
 ```
 ┌──────────────┐     ┌──────────┐     ┌───────────────────┐     ┌─────────────────┐
 │   REST API   │────▶│  MySQL   │◀────│  Watcher Service  │────▶│  Redis Sorted   │
