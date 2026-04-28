@@ -7,6 +7,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import java.time.*;
+import java.time.Instant;
 import java.util.UUID;
 /** Service responsible for creating jobs and routing them to Kafka or the scheduler. */
 @Service
@@ -35,15 +36,16 @@ public class JobService {
             String[] parts = request.getTime().split(":");
             int hour = Integer.parseInt(parts[0]);
             int minute = Integer.parseInt(parts[1]);
+            ZoneId zone = ZoneId.of("Asia/Kolkata");
             LocalDateTime dateTime = LocalDateTime.of(
-                    LocalDate.now(),
+                    LocalDate.now(zone),
                     LocalTime.of(hour, minute)
             );
-            if (dateTime.isBefore(LocalDateTime.now())) {
+            if (dateTime.atZone(zone).toInstant().isBefore(Instant.now())) {
                 dateTime = dateTime.plusDays(1);
             }
             scheduleTime = dateTime
-                    .atZone(ZoneId.systemDefault())
+                    .atZone(zone)
                     .toInstant()
                     .toEpochMilli();
         } else {
