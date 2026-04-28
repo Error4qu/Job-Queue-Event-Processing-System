@@ -366,9 +366,9 @@ After 5: FAILED
 
 ### 🔲 Planned
 
-- [ ] Dockerfile (multi-stage build)
-- [ ] Full docker-compose (app + Kafka + Redis + MySQL + Prometheus + Grafana)
-- [ ] CI/CD pipeline (GitHub Actions)
+- [x] Dockerfile (multi-stage build)
+- [x] Full docker-compose (app + Kafka + Redis + MySQL)
+- [x] CI/CD pipeline (GitHub Actions)
 - [ ] Prometheus metrics (Micrometer)
 - [ ] Grafana dashboards (job throughput, failure rate, latency)
 - [ ] GET endpoints microservice (`/jobs`, `/jobs/{id}`, `/jobs/stats`)
@@ -416,6 +416,36 @@ cd job-queue
 
 ```bash
 ./mvnw test
+```
+
+---
+
+## Running via Docker Hub (Fastest)
+
+If you just want to run the pre-compiled application without dealing with Java or Maven, you can pull the image directly from Docker Hub.
+
+### 1. Update `docker-compose.yml`
+Ensure your `app` service is pointing to the image:
+```yaml
+  app:
+    image: hiimadhavhere/job-queue-app:latest
+```
+
+### 2. Pull and Run
+```bash
+docker compose pull
+docker compose up -d
+```
+
+### 3. Test it out
+Send a job using PowerShell:
+```powershell
+Invoke-RestMethod -Uri "http://localhost:8080/jobs" -Method POST -ContentType "application/json" -Body '{"type":"LOG","payload":"testing-hub","message":"Hello!"}'
+```
+
+View the logs:
+```bash
+docker compose logs app -f
 ```
 
 ---
