@@ -363,12 +363,12 @@ After 5: FAILED
 - [x] SLF4J logging throughout (no System.out)
 - [x] Manual Kafka acknowledgment (at-least-once delivery)
 - [x] Idempotency key with unique constraint
-
-### 🔲 Planned
-
 - [x] Dockerfile (multi-stage build)
 - [x] Full docker-compose (app + Kafka + Redis + MySQL)
 - [x] CI/CD pipeline (GitHub Actions)
+
+### 🔲 Planned
+
 - [ ] Prometheus metrics (Micrometer)
 - [ ] Grafana dashboards (job throughput, failure rate, latency)
 - [ ] GET endpoints microservice (`/jobs`, `/jobs/{id}`, `/jobs/stats`)
