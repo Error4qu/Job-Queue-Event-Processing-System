@@ -9,6 +9,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import java.util.List;
+import java.util.Map;
 /** Scheduled watcher that picks up PENDING jobs and pushes them into the Redis delay queue. */
 @Service
 public class WatcherService {
@@ -16,14 +17,16 @@ public class WatcherService {
     private final JobRepository repo;
     private final RedisDelayQueueService redisQueue;
     private final StringRedisTemplate redis;
+    private final IncidentPublisherService incidentPublisher;
     /** Constructs the watcher with required dependencies. */
     public WatcherService(JobRepository repo, RedisDelayQueueService redisQueue,
-                          StringRedisTemplate redis) {
+                          StringRedisTemplate redis, IncidentPublisherService incidentPublisher) {
         this.repo = repo;
         this.redisQueue = redisQueue;
         this.redis = redis;
+        this.incidentPublisher = incidentPublisher;
     }
-    /** Runs every 20 seconds to schedule pending jobs and detect watcher gaps. */
+    /** Runs every 20 seconds to schedule pending and retry jobs, and detect watcher gaps. */
     @Scheduled(fixedDelay = 20000)
     public void watch() {
         long now = System.currentTimeMillis();
@@ -31,10 +34,17 @@ public class WatcherService {
         redis.opsForValue().set("watcher:lastRun", String.valueOf(now));
         if (last != null && now - Long.parseLong(last) > 25000) {
             log.warn("Watcher gap detected, triggering recovery");
+            incidentPublisher.publish(
+                    "WATCHER_GAP", "HIGH", "Watcher heartbeat gap detected",
+                    null, null, "Gap exceeded 25s threshold",
+                    Map.of("gapMs", String.valueOf(now - Long.parseLong(last)))
+            );
             recoverMissedJobs(now);
         }
+
+        // 1. Process PENDING jobs
         List<Job> jobs = repo.findWindow(
-                now,
+                0L,
                 now + 20000,
                 PageRequest.of(0, 200)
         );
@@ -45,10 +55,32 @@ public class WatcherService {
             redisQueue.scheduleJob(job.getId(), job.getScheduleTime());
             log.info("Job scheduled jobId={} scheduleTime={}", job.getId(), job.getScheduleTime());
         }
+
+        // 2. Process RETRY jobs
+        List<Job> retryJobs = repo.findRetryWindow(
+                0L,
+                now + 20000,
+                PageRequest.of(0, 200)
+        );
+        for (Job job : retryJobs) {
+            if (JobStatus.RETRY != job.getStatus()) continue;
+            job.setStatus(JobStatus.SCHEDULED);
+            repo.save(job);
+            redisQueue.scheduleJob(job.getId(), job.getNextRetryTime());
+            log.info("Retry job scheduled jobId={} nextRetryTime={}", job.getId(), job.getNextRetryTime());
+        }
     }
+    /** Triggers recovery for missed jobs; returns count of recovered jobs. */
+    public int triggerRecovery() {
+        long now = System.currentTimeMillis();
+        return recoverMissedJobs(now);
+    }
+
     /** Recovers jobs that may have been missed during a watcher outage. */
-    private void recoverMissedJobs(long now) {
+    private int recoverMissedJobs(long now) {
+        int count = 0;
         long start = now - 60000;
+        // 1. Recover PENDING or SCHEDULED jobs
         List<Job> jobs = repo.findPendingOrScheduledInRange(
                 start,
                 now,
@@ -63,6 +95,23 @@ public class WatcherService {
                 repo.save(job);
             }
             log.info("Recovered missed jobId={}", job.getId());
+            count++;
         }
+
+        // 2. Recover RETRY jobs
+        List<Job> retryJobs = repo.findRetryInRange(
+                start,
+                now,
+                PageRequest.of(0, 500)
+        );
+        for (Job job : retryJobs) {
+            if (JobStatus.RETRY != job.getStatus()) continue;
+            redisQueue.scheduleJob(job.getId(), job.getNextRetryTime());
+            job.setStatus(JobStatus.SCHEDULED);
+            repo.save(job);
+            log.info("Recovered missed retry jobId={}", job.getId());
+            count++;
+        }
+        return count;
     }
 }

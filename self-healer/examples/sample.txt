@@ -1,0 +1,5 @@
+2026-06-27T23:41:00 WARN Watcher gap detected, triggering recovery
+2026-06-27T23:41:02 WARN Rate limit hit for type=LOG, scheduling retry jobId=42
+2026-06-27T23:41:05 WARN Circuit OPEN for type=API, delaying jobId=84
+2026-06-27T23:41:09 ERROR Job failed jobId=21 reason=Connection refused
+2026-06-27T23:41:12 WARN Skipping job 55 due to invalid state: COMPLETED

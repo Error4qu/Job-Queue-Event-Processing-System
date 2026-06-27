@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Job Queue — Scalability Report</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:        #0d0f18;
+    --bg2:       #13162a;
+    --bg3:       #1a1e35;
+    --border:    #2a2f52;
+    --accent:    #6c63ff;
+    --accent2:   #00e5ff;
+    --green:     #00c853;
+    --yellow:    #ffd600;
+    --red:       #ff5252;
+    --text:      #e8eaf6;
+    --muted:     #7986cb;
+    --card-glow: rgba(108,99,255,0.15);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Inter', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 0 0 60px;
+  }
+  /* Hero */
+  .hero {
+    background: linear-gradient(135deg, #0d0f18 0%, #1a1040 50%, #0d1a2f 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 48px 40px 40px;
+    position: relative;
+    overflow: hidden;
+  }
+  .hero::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at 70% 50%, rgba(108,99,255,0.12) 0%, transparent 60%),
+                radial-gradient(ellipse at 20% 80%, rgba(0,229,255,0.08) 0%, transparent 50%);
+  }
+  .hero-inner { position: relative; max-width: 1200px; margin: 0 auto; }
+  .hero h1 {
+    font-size: 2.4rem; font-weight: 700; letter-spacing: -0.5px;
+    background: linear-gradient(135deg, #fff 30%, var(--accent2));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .hero p { color: var(--muted); margin-top: 8px; font-size: 0.95rem; }
+  .hero-meta { display: flex; gap: 24px; margin-top: 20px; flex-wrap: wrap; }
+  .meta-chip {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 5px 14px;
+    font-size: 0.8rem;
+    color: var(--muted);
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .meta-chip span { color: var(--text); font-weight: 600; }
+
+  /* Layout */
+  .container { max-width: 1200px; margin: 0 auto; padding: 0 40px; }
+
+  /* Section headings */
+  .phase-header {
+    display: flex; align-items: center; gap: 14px;
+    margin: 48px 0 24px;
+  }
+  .phase-num {
+    width: 36px; height: 36px; border-radius: 50%;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 0.9rem; flex-shrink: 0;
+    box-shadow: 0 0 20px rgba(108,99,255,0.4);
+  }
+  .phase-title { font-size: 1.3rem; font-weight: 600; }
+  .phase-sub { color: var(--muted); font-size: 0.85rem; margin-top: 2px; }
+
+  /* Cards */
+  .card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 28px;
+    margin-bottom: 24px;
+    box-shadow: 0 4px 30px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.04);
+    transition: box-shadow 0.2s;
+  }
+  .card:hover { box-shadow: 0 8px 40px var(--card-glow); }
+  .card-title { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1.5px; color: var(--muted); margin-bottom: 18px; }
+
+  /* Metric grids */
+  .metric-grid { display: grid; gap: 16px; }
+  .metric-grid-4 { grid-template-columns: repeat(4, 1fr); }
+  .metric-grid-3 { grid-template-columns: repeat(3, 1fr); }
+  .metric-grid-2 { grid-template-columns: repeat(2, 1fr); }
+  @media (max-width: 900px) { .metric-grid-4, .metric-grid-3 { grid-template-columns: repeat(2,1fr); } }
+  @media (max-width: 600px) { .metric-grid-4, .metric-grid-3, .metric-grid-2 { grid-template-columns: 1fr; } }
+
+  .metric {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px 20px;
+  }
+  .metric-label { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+  .metric-value { font-size: 1.9rem; font-weight: 700; font-family: 'JetBrains Mono', monospace; line-height: 1; }
+  .metric-unit { font-size: 0.85rem; color: var(--muted); margin-top: 4px; }
+  .metric-value.green { color: var(--green); }
+  .metric-value.yellow { color: var(--yellow); }
+  .metric-value.red { color: var(--red); }
+  .metric-value.accent { color: var(--accent2); }
+
+  /* Tables */
+  table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+  thead th {
+    text-align: left;
+    padding: 10px 14px;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+  }
+  tbody td { padding: 11px 14px; border-bottom: 1px solid rgba(42,47,82,0.5); font-family: 'JetBrains Mono', monospace; font-size: 0.83rem; }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover td { background: rgba(108,99,255,0.05); }
+  .row-ok td:first-child { border-left: 3px solid var(--green); }
+  .row-warn td:first-child { border-left: 3px solid var(--red); }
+  td.good { color: var(--green); font-weight: 600; }
+  td.bad  { color: var(--red);   font-weight: 600; }
+  td.highlight { color: var(--yellow); }
+  td.danger    { color: var(--red); }
+
+  /* Charts */
+  .chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px; }
+  @media (max-width: 800px) { .chart-grid { grid-template-columns: 1fr; } }
+  .chart-wrap { position: relative; height: 260px; }
+
+  /* Badges */
+  .badge { display: inline-flex; align-items: center; gap: 8px; padding: 8px 16px; border-radius: 8px; font-size: 0.85rem; font-weight: 500; margin-bottom: 10px; }
+  .badge-ok   { background: rgba(0,200,83,0.12);  border: 1px solid rgba(0,200,83,0.3);  color: var(--green); }
+  .badge-warn { background: rgba(255,82,82,0.12); border: 1px solid rgba(255,82,82,0.3); color: var(--red); }
+  .badge-info { background: rgba(108,99,255,0.12);border: 1px solid rgba(108,99,255,0.3);color: var(--accent); }
+
+  /* Resilience list */
+  .resil-list { display: flex; flex-direction: column; gap: 12px; }
+  .resil-item {
+    display: flex; align-items: flex-start; gap: 14px;
+    background: var(--bg3); border: 1px solid var(--border);
+    border-radius: 10px; padding: 14px 18px;
+  }
+  .resil-icon { font-size: 1.2rem; line-height: 1.4; flex-shrink: 0; }
+  .resil-name { font-weight: 600; font-size: 0.9rem; margin-bottom: 4px; }
+  .resil-detail { color: var(--muted); font-size: 0.82rem; font-family: 'JetBrains Mono', monospace; }
+
+  /* Footer */
+  .footer { text-align: center; color: var(--muted); font-size: 0.8rem; margin-top: 60px; padding: 20px; border-top: 1px solid var(--border); }
+
+  /* Divider */
+  hr { border: none; border-top: 1px solid var(--border); margin: 40px 0; }
+
+  /* Recommendation box */
+  .reco-box {
+    background: linear-gradient(135deg, rgba(108,99,255,0.08), rgba(0,229,255,0.05));
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-top: 12px;
+  }
+  .reco-box h4 { font-size: 0.85rem; color: var(--accent2); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px; }
+  .reco-box li { color: var(--muted); font-size: 0.83rem; margin: 6px 0 6px 16px; line-height: 1.6; }
+  .reco-box code { font-family: 'JetBrains Mono', monospace; color: var(--text); background: rgba(0,0,0,0.3); padding: 1px 5px; border-radius: 3px; }
+
+  .scrollbar-thin { overflow-x: auto; }
+</style>
+</head>
+<body>
+
+<!-- HERO -->
+<div class="hero">
+  <div class="hero-inner">
+    <h1>🚀 Job Queue — Scalability Report</h1>
+    <p>Spring Boot + Apache Kafka + Redis + MySQL · Distributed Job Scheduler</p>
+    <div class="hero-meta">
+      <div class="meta-chip">Generated: <span>27/6/2026, 10:32:49 pm</span></div>
+      <div class="meta-chip">Server: <span>localhost:8080</span></div>
+      <div class="meta-chip">Consumers: <span>3 Kafka threads</span></div>
+      <div class="meta-chip">Rate Limit: <span>5 req/s/type</span></div>
+      <div class="meta-chip">Circuit Breaker: <span>5-failure threshold</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+
+<!-- ── PHASE 1 ────────────────────────────────────────────── -->
+<div class="phase-header">
+  <div class="phase-num">1</div>
+  <div>
+    <div class="phase-title">Sustained Throughput Benchmark</div>
+    <div class="phase-sub">Fixed RPS rates sustained for 10 seconds each — measures steady-state capacity</div>
+  </div>
+</div>
+
+<div class="chart-grid">
+  <div class="card">
+    <div class="card-title">Submission Latency Percentiles vs Target RPS</div>
+    <div class="chart-wrap"><canvas id="p1LatChart"></canvas></div>
+  </div>
+  <div class="card">
+    <div class="card-title">Achieved Throughput vs Target RPS</div>
+    <div class="chart-wrap"><canvas id="p1ThroughputChart"></canvas></div>
+  </div>
+</div>
+
+<div class="card scrollbar-thin">
+  <div class="card-title">Throughput Results Table</div>
+  <table>
+    <thead><tr><th>Target</th><th>Achieved</th><th>Success Rate</th><th>p50 Latency</th><th>p90 Latency</th><th>p99 Latency</th><th>Max Latency</th></tr></thead>
+    <tbody>
+    <tr class="row-ok">
+      <td>10 RPS</td>
+      <td>9.2 RPS</td>
+      <td class="good">100.0%</td>
+      <td>15ms</td>
+      <td>25ms</td>
+      <td class="highlight">34ms</td>
+      <td class="danger">34ms</td>
+    </tr>
+    <tr class="row-ok">
+      <td>25 RPS</td>
+      <td>21.4 RPS</td>
+      <td class="good">100.0%</td>
+      <td>19ms</td>
+      <td>36ms</td>
+      <td class="highlight">52ms</td>
+      <td class="danger">66ms</td>
+    </tr>
+    <tr class="row-ok">
+      <td>50 RPS</td>
+      <td>33.0 RPS</td>
+      <td class="good">100.0%</td>
+      <td>12ms</td>
+      <td>17ms</td>
+      <td class="highlight">31ms</td>
+      <td class="danger">36ms</td>
+    </tr>
+    <tr class="row-ok">
+      <td>100 RPS</td>
+      <td>68.9 RPS</td>
+      <td class="good">100.0%</td>
+      <td>15ms</td>
+      <td>24ms</td>
+      <td class="highlight">34ms</td>
+      <td class="danger">37ms</td>
+    </tr></tbody>
+  </table>
+</div>
+
+<!-- ── PHASE 2 ────────────────────────────────────────────── -->
+<div class="phase-header">
+  <div class="phase-num">2</div>
+  <div>
+    <div class="phase-title">End-to-End Latency</div>
+    <div class="phase-sub">Time from job submission to status = COMPLETED — the latency that matters</div>
+  </div>
+</div>
+
+<div class="metric-grid metric-grid-4" style="margin-bottom:24px">
+  <div class="metric">
+    <div class="metric-label">Jobs Completed</div>
+    <div class="metric-value yellow">25/40</div>
+    <div class="metric-unit">success rate: 62.5%</div>
+  </div>
+  <div class="metric">
+    <div class="metric-label">E2E P50 Latency</div>
+    <div class="metric-value accent">444ms</div>
+    <div class="metric-unit">median time to COMPLETED</div>
+  </div>
+  <div class="metric">
+    <div class="metric-label">E2E P90 Latency</div>
+    <div class="metric-value yellow">470ms</div>
+    <div class="metric-unit">90th percentile</div>
+  </div>
+  <div class="metric">
+    <div class="metric-label">E2E P99 Latency</div>
+    <div class="metric-value red">475ms</div>
+    <div class="metric-unit">tail latency</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-title">Latency Breakdown — Where Does Time Go?</div>
+  <div class="metric-grid metric-grid-3">
+    <div class="metric">
+      <div class="metric-label">HTTP API Layer (avg)</div>
+      <div class="metric-value accent">26ms</div>
+      <div class="metric-unit">Spring Boot REST + MySQL write</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">Kafka Consumer (avg est.)</div>
+      <div class="metric-value yellow">423ms</div>
+      <div class="metric-unit">Kafka poll + execute + DB update</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">End-to-End Max</div>
+      <div class="metric-value red">475ms</div>
+      <div class="metric-unit">worst single job observed</div>
+    </div>
+  </div>
+  <div class="reco-box" style="margin-top:20px">
+    <h4>📊 How to interpret this</h4>
+    <ul>
+      <li><strong>API submission latency</strong> = Spring MVC controller + HikariCP + MySQL INSERT + Kafka produce</li>
+      <li><strong>Kafka consumer time</strong> = Kafka poll interval + rate-limit check + executor + DB UPDATE (COMPLETED)</li>
+      <li>High P99 vs P50 gap indicates GC pauses or occasional HikariCP wait — expected under light load on shared hardware</li>
+      <li>For production: target E2E P99 &lt; 2000ms at normal load, with burst tolerance up to 5000ms</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ── PHASE 3 ────────────────────────────────────────────── -->
+<div class="phase-header">
+  <div class="phase-num">3</div>
+  <div>
+    <div class="phase-title">Concurrency Spike Stress Test</div>
+    <div class="phase-sub">Progressive concurrent HTTP bursts — identifies the failure threshold</div>
+  </div>
+</div>
+
+<div class="chart-grid">
+  <div class="card">
+    <div class="card-title">Success Rate & p99 Latency by Concurrency</div>
+    <div class="chart-wrap"><canvas id="p3SuccChart"></canvas></div>
+  </div>
+  <div class="card">
+    <div class="card-title">Throughput (req/s) by Concurrency Level</div>
+    <div class="chart-wrap"><canvas id="p3ThruChart"></canvas></div>
+  </div>
+</div>
+
+<div class="card scrollbar-thin">
+  <div class="card-title">Concurrency Stress Results</div>
+  <div class="badge badge-warn">⚠ First failures at concurrency = 200</div>
+  <table style="margin-top:14px">
+    <thead><tr><th>Concurrency</th><th>Success%</th><th>Throughput</th><th>Wall Time</th><th>p50</th><th>p90</th><th>p99</th><th>Max</th></tr></thead>
+    <tbody>
+    <tr class="row-ok">
+      <td>10</td>
+      <td class="good">100%</td>
+      <td class="highlight">156.3 req/s</td>
+      <td>64ms</td>
+      <td>45ms</td>
+      <td>50ms</td>
+      <td class="">63ms</td>
+      <td class="danger">63ms</td>
+    </tr>
+    <tr class="row-ok">
+      <td>50</td>
+      <td class="good">100%</td>
+      <td class="highlight">195.3 req/s</td>
+      <td>256ms</td>
+      <td>178ms</td>
+      <td>229ms</td>
+      <td class="">243ms</td>
+      <td class="danger">243ms</td>
+    </tr>
+    <tr class="row-ok">
+      <td>100</td>
+      <td class="good">100%</td>
+      <td class="highlight">303.0 req/s</td>
+      <td>330ms</td>
+      <td>182ms</td>
+      <td>299ms</td>
+      <td class="">313ms</td>
+      <td class="danger">319ms</td>
+    </tr>
+    <tr class="row-warn">
+      <td>200</td>
+      <td class="bad">99.5%</td>
+      <td class="highlight">6.6 req/s</td>
+      <td>30206ms</td>
+      <td>487ms</td>
+      <td>1254ms</td>
+      <td class="danger">1635ms</td>
+      <td class="danger">30194ms</td>
+    </tr>
+    <tr class="row-ok">
+      <td>500</td>
+      <td class="good">100%</td>
+      <td class="highlight">81.3 req/s</td>
+      <td>6149ms</td>
+      <td>1978ms</td>
+      <td>3917ms</td>
+      <td class="">5773ms</td>
+      <td class="danger">6103ms</td>
+    </tr></tbody>
+  </table>
+</div>
+
+
+<div class="reco-box">
+  <h4>⚙ Bottleneck Diagnosis & Fix Suggestions</h4>
+  <ul>
+    <li><strong>Tomcat thread pool</strong>: Add <code>server.tomcat.threads.max=400</code> to <code>application.properties</code></li>
+    <li><strong>HikariCP connections</strong>: Add <code>spring.datasource.hikari.maximum-pool-size=30</code></li>
+    <li><strong>Windows port exhaustion</strong>: Normal for loopback tests — set <code>net.ipv4.tcp_tw_reuse=1</code> or use Linux</li>
+    <li><strong>Kafka producer batching</strong>: Tune <code>spring.kafka.producer.batch-size</code> and <code>linger.ms</code> for higher throughput</li>
+    <li><strong>Rate limiter</strong>: Your current 5-RPS/type limit will always throttle bursts — intended behaviour</li>
+  </ul>
+</div>
+
+
+<!-- ── PHASE 4 ────────────────────────────────────────────── -->
+<div class="phase-header">
+  <div class="phase-num">4</div>
+  <div>
+    <div class="phase-title">Resilience Validation</div>
+    <div class="phase-sub">Rate limiter, circuit breaker, and cancellation under load</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-title">Resilience Patterns — Test Results</div>
+  <div class="resil-list">
+    <div class="resil-item">
+      <div class="resil-icon">🛡️</div>
+      <div>
+        <div class="resil-name">Rate Limiter (Redis Lua · 5 req/s/type)</div>
+        <div class="resil-detail">✔ Triggered — 20 jobs retried — 0.0% recovered</div>
+      </div>
+    </div>
+    <div class="resil-item">
+      <div class="resil-icon">⚡</div>
+      <div>
+        <div class="resil-name">Circuit Breaker (AtomicInteger · 5-failure threshold · 30s timeout)</div>
+        <div class="resil-detail">✔ Circuit opened correctly — 6th job went to RETRY instantly</div>
+      </div>
+    </div>
+    <div class="resil-item">
+      <div class="resil-icon">🚫</div>
+      <div>
+        <div class="resil-name">Job Cancellation (Redis TTL flag)</div>
+        <div class="resil-detail">✔ Cancellation accepted (status: PENDING)</div>
+      </div>
+    </div>
+    <div class="resil-item">
+      <div class="resil-icon">🔄</div>
+      <div>
+        <div class="resil-name">Exponential Backoff Retry (max 5 retries · cap 20s)</div>
+        <div class="resil-detail">Tested implicitly via rate-limiter → RETRY → WatcherService re-queue flow</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── ARCHITECTURE NOTES ─────────────────────────────────── -->
+<hr>
+<div class="card">
+  <div class="card-title">Architecture Notes & Scaling Recommendations</div>
+  <div class="reco-box">
+    <h4>🔮 Production Scaling Roadmap</h4>
+    <ul>
+      <li><strong>Kafka Partitions</strong>: Scale from 1 → N partitions and match consumer <code>concurrency</code> to enable horizontal processing</li>
+      <li><strong>Redis Cluster</strong>: Move from single Redis to Redis Cluster for HA rate-limiting and delay queue at scale</li>
+      <li><strong>MySQL Read Replicas</strong>: Offload <code>GET /jobs/{id}</code> and stats queries to read replicas</li>
+      <li><strong>API Instances</strong>: Stateless Spring Boot app — deploy behind load balancer; use leader election for Watcher/Dispatcher</li>
+      <li><strong>Observability</strong>: Add Micrometer → Prometheus → Grafana for job throughput, failure rate, and queue depth dashboards</li>
+      <li><strong>DLQ</strong>: Implement Dead Letter Queue for jobs that exhaust all retries — prevents silent data loss</li>
+    </ul>
+  </div>
+</div>
+
+</div><!-- /container -->
+
+<div class="footer">
+  Generated by <strong>Job Queue Scalability Test Suite</strong> · 27/6/2026, 10:32:49 pm
+</div>
+
+<script>
+const chartDefaults = {
+  responsive: true, maintainAspectRatio: false,
+  plugins: { legend: { labels: { color: '#7986cb', font: { family: 'Inter', size: 11 } } } },
+  scales: {
+    x: { ticks: { color: '#7986cb' }, grid: { color: 'rgba(42,47,82,0.5)' } },
+    y: { ticks: { color: '#7986cb' }, grid: { color: 'rgba(42,47,82,0.5)' } },
+  },
+};
+
+// Phase 1 — Latency Chart
+new Chart(document.getElementById('p1LatChart'), {
+  type: 'line',
+  data: {
+    labels: ["10 RPS","25 RPS","50 RPS","100 RPS"],
+    datasets: [
+      { label: 'p50', data: [15,19,12,15], borderColor: '#00c853', backgroundColor: 'rgba(0,200,83,0.08)', tension: 0.3, pointRadius: 5 },
+      { label: 'p90', data: [25,36,17,24], borderColor: '#ffd600', backgroundColor: 'rgba(255,214,0,0.08)', tension: 0.3, pointRadius: 5 },
+      { label: 'p99', data: [34,52,31,34], borderColor: '#ff5252', backgroundColor: 'rgba(255,82,82,0.08)', tension: 0.3, pointRadius: 5 },
+    ],
+  },
+  options: { ...chartDefaults, scales: { ...chartDefaults.scales, y: { ...chartDefaults.scales.y, title: { display: true, text: 'Latency (ms)', color: '#7986cb' } } } },
+});
+
+// Phase 1 — Throughput Chart
+new Chart(document.getElementById('p1ThroughputChart'), {
+  type: 'bar',
+  data: {
+    labels: ["10 RPS","25 RPS","50 RPS","100 RPS"],
+    datasets: [
+      { label: 'Achieved RPS', data: [9.2,21.4,33,68.9], backgroundColor: 'rgba(108,99,255,0.6)', borderColor: '#6c63ff', borderWidth: 1, borderRadius: 6 },
+    ],
+  },
+  options: { ...chartDefaults, scales: { ...chartDefaults.scales, y: { ...chartDefaults.scales.y, title: { display: true, text: 'Requests/sec', color: '#7986cb' } } } },
+});
+
+// Phase 3 — Success + p99 Chart
+new Chart(document.getElementById('p3SuccChart'), {
+  type: 'line',
+  data: {
+    labels: ["10","50","100","200","500"],
+    datasets: [
+      { label: 'Success %', data: [100,100,100,99.5,100], borderColor: '#00c853', backgroundColor: 'rgba(0,200,83,0.08)', tension: 0.3, yAxisID: 'ySucc', pointRadius: 5 },
+      { label: 'p99 Latency (ms)', data: [63,243,313,1635,5773],  borderColor: '#ff5252', backgroundColor: 'rgba(255,82,82,0.08)', tension: 0.3, yAxisID: 'yLat', pointRadius: 5 },
+    ],
+  },
+  options: {
+    ...chartDefaults,
+    scales: {
+      x: chartDefaults.scales.x,
+      ySucc: { type: 'linear', position: 'left',  ticks: { color: '#00c853' }, grid: { color: 'rgba(42,47,82,0.5)' }, min: 0, max: 100, title: { display: true, text: 'Success %', color: '#00c853' } },
+      yLat:  { type: 'linear', position: 'right', ticks: { color: '#ff5252' }, grid: { drawOnChartArea: false }, title: { display: true, text: 'p99 Latency (ms)', color: '#ff5252' } },
+    },
+  },
+});
+
+// Phase 3 — Throughput Chart
+new Chart(document.getElementById('p3ThruChart'), {
+  type: 'bar',
+  data: {
+    labels: ["10","50","100","200","500"],
+    datasets: [
+      { label: 'Throughput (req/s)', data: [156.3,195.3,303,6.6,81.3], backgroundColor: 'rgba(0,229,255,0.5)', borderColor: '#00e5ff', borderWidth: 1, borderRadius: 6 },
+    ],
+  },
+  options: { ...chartDefaults, scales: { ...chartDefaults.scales, x: { ...chartDefaults.scales.x, title: { display: true, text: 'Concurrency Level', color: '#7986cb' } }, y: { ...chartDefaults.scales.y, title: { display: true, text: 'Requests/sec', color: '#7986cb' } } } },
+});
+</script>
+</body>
+</html>

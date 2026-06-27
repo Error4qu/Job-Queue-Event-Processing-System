@@ -26,13 +26,15 @@ class KafkaConsumerServiceTest {
     @Mock
     private RateLimiterService rateLimiter;
     @Mock
+    private IncidentPublisherService incidentPublisher;
+    @Mock
     private Acknowledgment ack;
     @Mock
     private JobExecutor jobExecutor;
     private KafkaConsumerService consumer;
     @BeforeEach
     void setUp() {
-        consumer = new KafkaConsumerService(repo, executorFactory, redisService, rateLimiter);
+        consumer = new KafkaConsumerService(repo, executorFactory, redisService, rateLimiter, incidentPublisher);
     }
     @Test
     void consume_invalidMessage_shouldAckAndReturn() {

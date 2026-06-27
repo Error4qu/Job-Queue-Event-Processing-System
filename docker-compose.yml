@@ -22,7 +22,10 @@ services:
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_LISTENERS: INTERNAL://0.0.0.0:29092,EXTERNAL://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://localhost:9092
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
     healthcheck:
       test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1"]
@@ -58,7 +61,7 @@ services:
       start_period: 5s
 
   app:
-    image: hiimadhavhere/job-queue-app:latest
+    build: .
     depends_on:
       kafka:
         condition: service_healthy
@@ -73,7 +76,64 @@ services:
       SPRING_DATASOURCE_USERNAME: root
       SPRING_DATASOURCE_PASSWORD: root123
 
-      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
 
       REDIS_HOST: redis
       REDIS_PORT: 6379
+
+      ADMIN_API_KEY: ${ADMIN_API_KEY:-change-me-in-production}
+      INCIDENT_PUBLISHER_ENABLED: "true"
+
+      MANAGEMENT_HEALTH_MAIL_ENABLED: "false"
+
+  ai-agent:
+    profiles:
+      - ai
+    build:
+      context: .
+      dockerfile: ai-agent/Dockerfile
+    depends_on:
+      app:
+        condition: service_started
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8090:8090"
+    environment:
+      JOB_QUEUE_BASE_URL: http://app:8080
+      ADMIN_API_KEY: ${ADMIN_API_KEY:-change-me-in-production}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      AUTO_EXECUTE: ${AUTO_EXECUTE:-true}
+      MIN_CONFIDENCE: ${MIN_CONFIDENCE:-0.75}
+      DRY_RUN: ${DRY_RUN:-false}
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8090/health')\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  log-bridge:
+    profiles:
+      - ai
+    build:
+      context: .
+      dockerfile: log-bridge/Dockerfile
+    depends_on:
+      ai-agent:
+        condition: service_healthy
+    environment:
+      AI_AGENT_URL: http://ai-agent:8090
+    volumes:
+      - ./self-healer/examples/sample.txt:/logs/sample.txt:ro
+
+  self-healer:
+    profiles:
+      - self-healer
+    build:
+      context: ./self-healer
+    depends_on:
+      app:
+        condition: service_started
+    command: ["--help"]

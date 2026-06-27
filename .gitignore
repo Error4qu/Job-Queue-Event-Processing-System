@@ -2,7 +2,15 @@ target/
 *.log
 *.class
 *.jar
+*.exe
+build/
+.cache/
 .idea/
 *.iml
 .env
 *.env
+.vscode/
+*.vsix
+__pycache__/
+*.pyc
+LINKEDIN_POST.md

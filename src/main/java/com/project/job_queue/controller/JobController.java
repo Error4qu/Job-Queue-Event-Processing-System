@@ -7,7 +7,8 @@ import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.*;
-/** REST controller for job creation and cancellation. */
+import java.util.Map;
+/** REST controller for job creation, retrieval, cancellation and stats. */
 @RestController
 @RequestMapping("/jobs")
 public class JobController {
@@ -31,5 +32,16 @@ public class JobController {
         log.info("Received cancellation request jobId={}", id);
         redisService.cancelJob(id);
         return "Job " + id + " cancelled";
+    }
+    /** Retrieves a job by its ID. */
+    @GetMapping("/{id}")
+    public Job getJob(@PathVariable Long id) {
+        log.info("Received job retrieval request jobId={}", id);
+        return service.getJob(id);
+    }
+    /** Returns a live count of jobs grouped by status. Used by scalability tests and dashboards. */
+    @GetMapping("/stats")
+    public Map<String, Long> getStats() {
+        return service.getStats();
     }
 }

@@ -1,6 +1,51 @@
 # Job Queue System
 
-A production-grade distributed job scheduling and execution system built with **Spring Boot**, **Apache Kafka**, **Redis**, and **MySQL**. Designed for reliability, scalability, and fault tolerance.
+A distributed job scheduling and execution system built with **Spring Boot**, **Apache Kafka**, **Redis**, and **MySQL**. I designed it for reliability, scalability, and fault tolerance — with load testing and a self-healing orchestration layer on top.
+
+---
+
+## What's New
+
+This release adds two things I wanted before calling the project production-ready:
+
+### 1. Scalable testing
+
+| File | Purpose |
+|------|---------|
+| `scalability-test.js` | Throughput benchmarks, latency (p50/p95/p99), concurrency spikes, resilience validation |
+| `e2e-test.js` | End-to-end tests — job lifecycle, retry, circuit breaker, cancellation |
+| `scalability-report.html` | HTML dashboard generated after a scalability run |
+| `GET /jobs/stats` | Live job counts by status (used by tests and dashboards) |
+
+```bash
+# Start the stack first
+docker compose up -d
+
+# Run E2E tests
+node e2e-test.js
+
+# Run scalability suite (generates scalability-report.html)
+node scalability-test.js
+```
+
+### 2. Basic self-heal orchestration
+
+I added a closed-loop recovery path on top of the existing watcher gap recovery:
+
+```
+Spring App ──incident-topic──▶ Orchestrator (Python)
+                                    │
+Self-Healer (C++) ──log plans───────┤
+                                    ▼
+                            /admin/* recovery APIs
+```
+
+- **`self-healer/`** — C++ microservice that reads logs, detects incidents, and outputs JSON healing plans
+- **`ai-agent/`** — Python orchestrator that consumes incidents, uses self-healer plans, and calls admin APIs
+- **`log-bridge/`** — Optional bridge that pipes log files through self-healer into the orchestrator
+- **Admin APIs** — Secured endpoints for watcher recovery, Redis reconcile, job requeue, circuit reset
+
+See [Self-Healing Orchestration](#self-healing-orchestration) below and [ai-agent/README.md](ai-agent/README.md) for setup.
 
 ---
 
@@ -60,7 +105,8 @@ A production-grade distributed job scheduling and execution system built with **
 | Cancellation | Redis Key-Value | TTL-based cancellation flags |
 | Rate Limiting | Redis + Lua Script | Atomic sliding window rate control |
 | Monitoring | Spring Boot Actuator | Health checks, metrics |
-| Testing | JUnit 5 + Mockito | Unit tests (13 tests) |
+| Testing | JUnit 5 + Node.js suites | Unit tests + E2E + scalability benchmarks |
+| Self-Healing | C++ self-healer + Python orchestrator | Log detection, incident plans, automated recovery |
 
 ---
 
@@ -152,46 +198,28 @@ PENDING ──▶ SCHEDULED ──▶ QUEUED ──▶ PROCESSING ──▶ COMP
 
 ```
 job-queue/
-├── docker-compose.yml                    # Kafka + Zookeeper
-├── .env                                  # Environment variables (gitignored)
-└── job-queue/
-    ├── pom.xml                           # Maven dependencies
-    └── src/
-        ├── main/java/com/project/job_queue/
-        │   ├── JobQueueApplication.java  # Bootstrap with @EnableScheduling, @EnableKafka
-        │   ├── config/
-        │   │   └── KafkaConfig.java      # Listener container factory (manual ack)
-        │   ├── controller/
-        │   │   └── JobController.java    # POST /jobs, POST /jobs/{id}/cancel
-        │   ├── dto/
-        │   │   ├── JobRequest.java       # Request DTO with @Valid constraints
-        │   │   └── ErrorResponse.java    # Standard error response DTO
-        │   ├── exception/
-        │   │   └── GlobalExceptionHandler.java  # @RestControllerAdvice
-        │   ├── executer/
-        │   │   ├── JobExecutor.java       # Executor interface
-        │   │   ├── ExecutorFactory.java   # Strategy pattern resolver
-        │   │   ├── EmailExecutor.java     # Sends email via JavaMailSender
-        │   │   ├── ApiExecutor.java       # HTTP GET via WebClient
-        │   │   └── LogExecutor.java       # Logs job payload
-        │   ├── model/
-        │   │   ├── Job.java              # JPA entity with @Enumerated status
-        │   │   └── JobStatus.java        # Enum: PENDING, SCHEDULED, QUEUED, etc.
-        │   ├── repository/
-        │   │   └── JobRepository.java    # JPA queries for windowed job fetching
-        │   └── service/
-        │       ├── JobService.java            # Job creation + immediate dispatch
-        │       ├── KafkaConsumerService.java   # Consumer with circuit breaker + retry
-        │       ├── KafkaProducerService.java   # Publishes to job-topic
-        │       ├── RateLimiterService.java     # Lua-based sliding window
-        │       ├── RedisDelayQueueService.java # Sorted set operations
-        │       ├── RedisDispatcherService.java # Polls Redis, dispatches to Kafka
-        │       ├── RedisService.java           # Cancellation flags with TTL
-        │       └── WatcherService.java         # DB scanner + gap recovery
-        └── test/java/com/project/job_queue/
-            └── service/
-                ├── JobServiceTest.java          # 5 unit tests
-                └── KafkaConsumerServiceTest.java # 8 unit tests
+├── docker-compose.yml          # Full stack: app, Kafka, Redis, MySQL, optional ai profile
+├── e2e-test.js                 # End-to-end test suite
+├── scalability-test.js         # Load, latency, and resilience benchmarks
+├── scalability-report.html     # Generated HTML report (after scalability run)
+├── self-healer/                # C++ log analyzer + healing plan generator
+│   ├── src/detectors.cpp       # Incident detection (chain of responsibility)
+│   ├── src/healing_strategies.cpp
+│   └── examples/sample.txt     # Sample log file for demos
+├── ai-agent/                   # Python self-healing orchestrator
+├── log-bridge/                 # Optional log → self-healer → orchestrator bridge
+└── src/
+    ├── main/java/com/project/job_queue/
+    │   ├── controller/
+    │   │   ├── JobController.java    # POST /jobs, GET /jobs/{id}, GET /jobs/stats
+    │   │   └── AdminController.java  # Secured recovery endpoints
+    │   ├── service/
+    │   │   ├── WatcherService.java         # DB scanner + gap recovery
+    │   │   ├── KafkaConsumerService.java   # Consumer + circuit breaker + retry
+    │   │   ├── AdminService.java           # Recovery operations
+    │   │   └── IncidentPublisherService.java
+    │   └── ...
+    └── test/java/              # JUnit unit tests
 ```
 
 ---
@@ -215,6 +243,11 @@ Content-Type: application/json
 ### Cancel Job
 ```
 POST /jobs/{id}/cancel
+```
+
+### Get Job Stats
+```
+GET /jobs/stats
 ```
 
 ### Health Check (Actuator)
@@ -366,14 +399,18 @@ After 5: FAILED
 - [x] Dockerfile (multi-stage build)
 - [x] Full docker-compose (app + Kafka + Redis + MySQL)
 - [x] CI/CD pipeline (GitHub Actions)
+- [x] Scalability test suite (`scalability-test.js` + HTML report)
+- [x] E2E test suite (`e2e-test.js`)
+- [x] C++ self-healer microservice (log detection + healing plans)
+- [x] Self-healing orchestrator (`ai-agent/`) with Kafka incident consumption
+- [x] Admin remediation APIs (`/admin/*`)
+- [x] Incident publishing to Kafka (`incident-topic`)
 
 ### 🔲 Planned
 
 - [ ] Prometheus metrics (Micrometer)
 - [ ] Grafana dashboards (job throughput, failure rate, latency)
-- [ ] GET endpoints microservice (`/jobs`, `/jobs/{id}`, `/jobs/stats`)
 - [ ] Dead Letter Queue (DLQ) for exhausted retries
-- [ ] AI Agent microservice (self-healing job recovery)
 
 ---
 
@@ -415,7 +452,14 @@ cd job-queue
 ### 4. Run Tests
 
 ```bash
+# Java unit tests
 ./mvnw test
+
+# E2E tests (requires stack running on :8080)
+node e2e-test.js
+
+# Scalability benchmarks (generates scalability-report.html)
+node scalability-test.js
 ```
 
 ---
@@ -447,6 +491,97 @@ View the logs:
 ```bash
 docker compose logs app -f
 ```
+
+---
+
+## Configuration You Should Change
+
+Before running in production or with the self-healing profile, update these:
+
+| Setting | Where | Default | What to set |
+|---------|-------|---------|-------------|
+| `ADMIN_API_KEY` | `.env` / `docker-compose.yml` | `change-me-in-production` | Strong secret — must match in `app` and `ai-agent` |
+| `DB_PASSWORD` | `.env` | `root123` | Your MySQL password |
+| `MAIL_USERNAME` / `MAIL_PASSWORD` | `.env` | — | Gmail app password (for EMAIL jobs) |
+| `OPENAI_API_KEY` | `.env` | (empty) | Optional — enables LLM analysis in orchestrator |
+| `AUTO_EXECUTE` | `docker-compose.yml` | `true` | Set `false` to plan-only mode |
+| `DRY_RUN` | `docker-compose.yml` | `false` | Set `true` to skip admin API calls |
+
+Example `.env`:
+
+```env
+DB_USERNAME=root
+DB_PASSWORD=your-password
+ADMIN_API_KEY=your-secure-admin-key
+MAIL_USERNAME=your-email@gmail.com
+MAIL_PASSWORD=your-app-password
+REDIS_HOST=localhost
+REDIS_PORT=6379
+KAFKA_BOOTSTRAP_SERVERS=localhost:9092
+OPENAI_API_KEY=sk-...   # optional
+```
+
+---
+
+## Self-Healing Orchestration
+
+I built this to close the gap between **detecting** problems and **fixing** them automatically. The C++ self-healer handles fast log filtering and plan generation; the Python orchestrator decides when to execute those plans.
+
+```
+┌─────────────┐   incident-topic   ┌──────────────────────────────────────────┐
+│  Spring App │───────────────────▶│         Orchestrator (ai-agent/)          │
+│  (publisher)│                    │  Observer → Analyzer → Planner → Executor │
+└─────────────┘                    └──────────────────────┬───────────────────┘
+┌─────────────┐   JSON plans       │                       │ X-Admin-Api-Key
+│ Self-Healer │───(log-bridge)────▶│                       ▼
+│   (C++)     │                    │               Spring /admin/*
+└─────────────┘                    └──────────────────────────────────────────┘
+```
+
+### Components
+
+| Component | Role |
+|-----------|------|
+| **Self-Healer (C++)** | Detects incidents from logs; outputs `{ incident, plan }` JSON |
+| **Orchestrator (Python)** | Consumes Kafka incidents, enriches via self-healer, executes recovery |
+| **Log Bridge** | Pipes log files through self-healer into the orchestrator |
+| **Admin APIs** | Secured recovery endpoints the orchestrator calls |
+
+### Admin APIs
+
+| Endpoint | Action |
+|----------|--------|
+| `POST /admin/watcher/recover` | Recover missed schedule windows |
+| `POST /admin/redis/reconcile` | Reconcile Redis delay queue with MySQL |
+| `POST /admin/jobs/{id}/requeue` | Requeue a stuck job |
+| `POST /admin/circuit/{type}/reset` | Reset circuit breaker for a job type |
+| `GET /admin/health/detailed` | System health snapshot |
+
+All admin endpoints require: `X-Admin-Api-Key: <your-key>`
+
+### Start with self-healing enabled
+
+```bash
+export ADMIN_API_KEY=your-secure-key
+
+docker compose --profile ai up -d --build
+```
+
+Orchestrator health: `http://localhost:8090/health`
+
+### Try it
+
+```bash
+# Run bundled sample logs through self-healer + orchestrator
+curl -X POST http://localhost:8090/incidents/demo-sample
+
+# Pipe a single log line
+curl -X POST http://localhost:8090/incidents/analyze-logs \
+  -H "Content-Type: application/json" \
+  -d '{"lines":["2026-06-27T23:41:00 WARN Watcher gap detected, triggering recovery"]}'
+```
+
+Full orchestrator config: [ai-agent/README.md](ai-agent/README.md)
 
 ---
 

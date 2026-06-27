@@ -8,6 +8,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import java.time.*;
 import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.UUID;
 /** Service responsible for creating jobs and routing them to Kafka or the scheduler. */
 @Service
@@ -62,5 +64,19 @@ public class JobService {
             producer.sendJob(saved.getId().toString());
         }
         return saved;
+    }
+    /** Retrieves a job by its ID. */
+    public Job getJob(Long id) {
+        return repo.findById(id).orElse(null);
+    }
+
+    /** Returns a snapshot of job counts grouped by status plus a total. */
+    public Map<String, Long> getStats() {
+        Map<String, Long> stats = new LinkedHashMap<>();
+        for (JobStatus s : JobStatus.values()) {
+            stats.put(s.name(), repo.countByStatus(s));
+        }
+        stats.put("TOTAL", repo.count());
+        return stats;
     }
 }
